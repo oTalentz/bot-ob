@@ -5,17 +5,12 @@ import pandas as pd
 import cv2
 import numpy as np
 from PIL import Image
-import os
-import time
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 
-st.set_page_config(page_title="Plataforma Binária Integrada", layout="wide")
-st.title("🧠 Plataforma de Operações Binárias Automatizada")
+st.set_page_config(page_title="Simulador + Análise de Imagem", layout="wide")
+st.title("🧠 Plataforma Binária - Versão para Nuvem")
 
-aba = st.sidebar.radio("Escolha o módulo", ["Simulador Martingale", "Análise de Imagem", "Captura Automática da Quotex"])
+aba = st.sidebar.radio("Escolha o módulo", ["Simulador Martingale", "Análise de Imagem"])
 
-# SIMULADOR
 if aba == "Simulador Martingale":
     col1, col2, col3 = st.columns(3)
 
@@ -79,9 +74,8 @@ if aba == "Simulador Martingale":
         st.markdown(f"**Total de Operações:** {len(df)}")
         st.download_button("📥 Baixar Resultado em CSV", data=df.to_csv(index=False), file_name="resultado_martingale.csv", mime="text/csv")
 
-# ANÁLISE DE IMAGEM
 elif aba == "Análise de Imagem":
-    st.markdown("Envie uma imagem de gráfico (print de operações, candles, etc.) e detectaremos zonas de suporte/resistência.")
+    st.markdown("Envie uma imagem de gráfico e o sistema detectará zonas de suporte/resistência.")
     uploaded_file = st.file_uploader("📤 Envie a imagem", type=["png", "jpg", "jpeg"])
     if uploaded_file:
         image = Image.open(uploaded_file).convert("RGB")
@@ -108,54 +102,3 @@ elif aba == "Análise de Imagem":
             st.markdown("**🔮 Entrada sugerida:** aguarde confirmação de pullback ou rompimento próximo a essas zonas.")
         else:
             st.warning("Nenhuma zona foi detectada com confiança.")
-
-# SCRAPER DA QUOTEX
-elif aba == "Captura Automática da Quotex":
-    st.warning("Esta função exige o ChromeDriver instalado e não funciona no ambiente da nuvem.")
-    if st.button("▶️ Iniciar Captura Automática"):
-        st.text("Iniciando scraping e análise automática a cada 30s...")
-
-        INTERVALO = 30
-        TOTAL_CAPTURAS = 3
-
-        options = Options()
-        options.add_argument("--headless")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        driver = webdriver.Chrome(options=options)
-
-        try:
-            driver.get("https://quotex.io/pt/demo-trade")
-            time.sleep(10)
-
-            for i in range(TOTAL_CAPTURAS):
-                screenshot_path = f"grafico_quotex_{i+1}.png"
-                driver.save_screenshot(screenshot_path)
-
-                image = Image.open(screenshot_path).convert("RGB")
-                img_array = np.array(image)
-                img_gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-                edges = cv2.Canny(img_gray, 50, 150)
-                lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=100, minLineLength=80, maxLineGap=10)
-
-                sups_resistencias = []
-                if lines is not None:
-                    for line in lines:
-                        x1, y1, x2, y2 = line[0]
-                        if abs(y1 - y2) < 10:
-                            sups_resistencias.append(y1)
-
-                if sups_resistencias:
-                    zonas = sorted(list(set([round(y, -1) for y in sups_resistencias])))
-                    st.success(f"[{i+1}] Zonas detectadas: {zonas}")
-                else:
-                    st.warning(f"[{i+1}] Nenhuma zona detectada.")
-
-                if i < TOTAL_CAPTURAS - 1:
-                    time.sleep(INTERVALO)
-
-        finally:
-            driver.quit()
-            st.text("Captura finalizada.")
