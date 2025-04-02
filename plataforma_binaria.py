@@ -5,12 +5,17 @@ import pandas as pd
 import cv2
 import numpy as np
 from PIL import Image
+import os
+import time
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 
-st.set_page_config(page_title="Simulador e Analisador de Operações Binárias", layout="wide")
-st.title("📊 Simulador de Martingale + 📈 Analisador de Gráfico por Imagem")
+st.set_page_config(page_title="Plataforma Binária Integrada", layout="wide")
+st.title("🧠 Plataforma de Operações Binárias Automatizada")
 
-aba = st.sidebar.radio("Escolha o módulo", ["Simulador Martingale", "Análise de Gráfico"])
+aba = st.sidebar.radio("Escolha o módulo", ["Simulador Martingale", "Análise de Imagem", "Captura Automática da Quotex"])
 
+# SIMULADOR
 if aba == "Simulador Martingale":
     col1, col2, col3 = st.columns(3)
 
@@ -35,26 +40,21 @@ if aba == "Simulador Martingale":
     def simular_com_detalhes(banca, entrada_base, payout, acerto_chance, max_mg):
         entrada = entrada_base
         operacao = {"Entradas": [], "Resultado": "", "Banca Antes": banca, "Banca Depois": 0}
-
         for tentativa in range(max_mg + 1):
             if entrada > banca:
                 operacao["Resultado"] = "Quebrou"
                 operacao["Entradas"].append(entrada)
                 operacao["Banca Depois"] = banca
                 return False, banca, operacao
-
             banca -= entrada
             operacao["Entradas"].append(entrada)
-
             if random.random() < acerto_chance:
                 lucro = entrada * payout
                 banca += entrada + lucro
                 operacao["Resultado"] = "Vitória"
                 operacao["Banca Depois"] = banca
                 return True, banca, operacao
-
             entrada *= 2
-
         operacao["Resultado"] = "Perdeu Sequência"
         operacao["Banca Depois"] = banca
         return False, banca, operacao
@@ -66,59 +66,96 @@ if aba == "Simulador Martingale":
             lucro_antes = banca - banca_inicial
             if lucro_antes >= stop_gain or lucro_antes <= -stop_loss_valor:
                 break
-
             sucesso, banca, operacao = simular_com_detalhes(banca, entrada_inicial, payout, taxa_acerto, max_martingale)
             operacao["Operação"] = i + 1
             detalhes.append(operacao)
 
         df = pd.DataFrame(detalhes)
         df["Entradas"] = df["Entradas"].apply(lambda x: ", ".join(f"R${v}" for v in x))
-
         st.subheader("📋 Resultado das Operações")
         st.dataframe(df, use_container_width=True)
-
         st.markdown(f"**Banca Final:** R${banca:.2f}")
         st.markdown(f"**Lucro/Prejuízo:** R${banca - banca_inicial:.2f}")
         st.markdown(f"**Total de Operações:** {len(df)}")
         st.download_button("📥 Baixar Resultado em CSV", data=df.to_csv(index=False), file_name="resultado_martingale.csv", mime="text/csv")
 
-elif aba == "Análise de Gráfico":
-    st.markdown("Envie uma imagem do gráfico (print de operações, candles, etc.) e o sistema detectará padrões, suporte/resistência e possíveis pontos de entrada.")
-    uploaded_file = st.file_uploader("📤 Envie a imagem do gráfico", type=["png", "jpg", "jpeg"])
-
+# ANÁLISE DE IMAGEM
+elif aba == "Análise de Imagem":
+    st.markdown("Envie uma imagem de gráfico (print de operações, candles, etc.) e detectaremos zonas de suporte/resistência.")
+    uploaded_file = st.file_uploader("📤 Envie a imagem", type=["png", "jpg", "jpeg"])
     if uploaded_file:
         image = Image.open(uploaded_file).convert("RGB")
         img_array = np.array(image)
         img_gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-
         st.image(image, caption="Imagem Original", use_column_width=True)
-
-        # Detecção de bordas
         edges = cv2.Canny(img_gray, threshold1=50, threshold2=150)
         st.image(edges, caption="Detecção de Bordas (Canny)", use_column_width=True)
-
-        # Detectar linhas
         lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=100, minLineLength=80, maxLineGap=10)
         linhas_detectadas = img_array.copy()
         sups_resistencias = []
-
         if lines is not None:
             for line in lines:
                 x1, y1, x2, y2 = line[0]
                 cv2.line(linhas_detectadas, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 if abs(y1 - y2) < 10:
                     sups_resistencias.append(y1)
-
         st.image(linhas_detectadas, caption="Linhas Detectadas (Verde)", use_column_width=True)
-
         if sups_resistencias:
-            zonas = list(set([round(y, -1) for y in sups_resistencias]))
-            zonas.sort()
-            st.subheader("🔍 Zonas de Suporte/Resistência Detectadas:")
+            zonas = sorted(list(set([round(y, -1) for y in sups_resistencias])))
+            st.subheader("🔍 Zonas de Suporte/Resistência:")
             for z in zonas:
                 st.markdown(f"- Linha em Y = {z}px")
-
-            st.markdown("**🔮 Sugestão de ponto de entrada:**")
-            st.markdown("Se o preço estiver se aproximando de uma dessas zonas, aguarde confirmação (como rejeição ou rompimento) para entrada.")
+            st.markdown("**🔮 Entrada sugerida:** aguarde confirmação de pullback ou rompimento próximo a essas zonas.")
         else:
-            st.warning("Nenhuma linha de suporte ou resistência foi detectada com confiança.")
+            st.warning("Nenhuma zona foi detectada com confiança.")
+
+# SCRAPER DA QUOTEX
+elif aba == "Captura Automática da Quotex":
+    st.warning("Esta função exige o ChromeDriver instalado e não funciona no ambiente da nuvem.")
+    if st.button("▶️ Iniciar Captura Automática"):
+        st.text("Iniciando scraping e análise automática a cada 30s...")
+
+        INTERVALO = 30
+        TOTAL_CAPTURAS = 3
+
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        driver = webdriver.Chrome(options=options)
+
+        try:
+            driver.get("https://quotex.io/pt/demo-trade")
+            time.sleep(10)
+
+            for i in range(TOTAL_CAPTURAS):
+                screenshot_path = f"grafico_quotex_{i+1}.png"
+                driver.save_screenshot(screenshot_path)
+
+                image = Image.open(screenshot_path).convert("RGB")
+                img_array = np.array(image)
+                img_gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+                edges = cv2.Canny(img_gray, 50, 150)
+                lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=100, minLineLength=80, maxLineGap=10)
+
+                sups_resistencias = []
+                if lines is not None:
+                    for line in lines:
+                        x1, y1, x2, y2 = line[0]
+                        if abs(y1 - y2) < 10:
+                            sups_resistencias.append(y1)
+
+                if sups_resistencias:
+                    zonas = sorted(list(set([round(y, -1) for y in sups_resistencias])))
+                    st.success(f"[{i+1}] Zonas detectadas: {zonas}")
+                else:
+                    st.warning(f"[{i+1}] Nenhuma zona detectada.")
+
+                if i < TOTAL_CAPTURAS - 1:
+                    time.sleep(INTERVALO)
+
+        finally:
+            driver.quit()
+            st.text("Captura finalizada.")
